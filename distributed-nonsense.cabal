@@ -16,9 +16,13 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 executable distributed-nonsense
-  -- main-is:             
+  main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.6 && <4.7
-  -- hs-source-dirs:      
+                       , binary >= 0.6.3.1
+                       , distributed-process
+                       , distributed-process-simplelocalnet
+                       , stm
+  hs-source-dirs:      src
   default-language:    Haskell2010
