@@ -6,8 +6,10 @@ module Master.Master
 
 import Control.Distributed.Process ( Process, NodeId, RemoteTable
                                    , NodeMonitorNotification (..)
-                                   , ProcessId (..)
-                                   , say, spawnLocal, getSelfPid, nsend
+                                   , ProcessMonitorNotification (..)
+                                   , DiedReason (..), ProcessId (..)
+                                   , say, spawnSupervised, spawnLocal
+                                   , getSelfPid, nsend
                                    , receiveWait, match, monitorNode
                                    , register, liftIO )
 import Control.Distributed.Process.Closure
@@ -21,6 +23,8 @@ import Text.Printf (printf)
 
 import GHC.Generics
 
+import Slave.Slave (slaveProc, slaveProc__static)
+
 data NodeDetected = 
   NodeDetected !NodeId
     deriving (Generic, Typeable)
@@ -32,13 +36,39 @@ supervisor = do
   register "supervisor" =<< getSelfPid
   forever $
     receiveWait
-    [ match $ \(NodeDetected nodeid) -> do
-         say $ "Detected node: " ++ show nodeid
-         monitorNode nodeid >> return ()
-    , match $ \(NodeMonitorNotification _ nodeid reason) ->
-       say $ printf "Node %s died because of %s" (show nodeid) (show reason)
+    [ match nodeDetected
+    , match nodeMonitorNotification                                             
+    , match processMonitorNotification
     ]
-
+  where
+    nodeDetected :: NodeDetected -> Process ()
+    nodeDetected (NodeDetected nodeId) = do
+      say $ "Detected node: " ++ show nodeId
+      _ <- monitorNode nodeId
+      newProc <- spawnSupervised nodeId $(mkStaticClosure 'slaveProc)
+      say $ printf "Create process %s at node %s" (show newProc) 
+                                                  (show nodeId)
+      return ()                                             
+                                             
+    nodeMonitorNotification :: NodeMonitorNotification -> Process ()
+    nodeMonitorNotification (NodeMonitorNotification _ nodeId reason) =
+      say $ printf "Node %s died because of %s" (show nodeId) (show reason)
+                                             
+    processMonitorNotification :: ProcessMonitorNotification -> Process ()
+    processMonitorNotification (ProcessMonitorNotification _ 
+                                processId 
+                                reason) =
+      case reason of                                          
+        (DiedException _) -> do
+          say $ printf "Process %s crashed and will be restarted" 
+                       (show processId)
+          newProc <- spawnSupervised (processNodeId processId)
+                                     $(mkStaticClosure 'slaveProc)
+          return ()                                       
+        _              ->                                          
+          say $ printf "Process %s died because of %s" (show processId)
+                                                       (show reason)
+                                             
 nodeDetector :: Backend -> Process ()
 nodeDetector backend = loop []
   where

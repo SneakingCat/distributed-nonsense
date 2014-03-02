@@ -10,12 +10,13 @@ import Control.Distributed.Process.Backend.SimpleLocalnet ( initializeBackend
                                                           , startSlave )
 
 import qualified Master.Master as Master
+import qualified Slave.Slave as Slave
 
 main :: IO ()
 main = do
   args <- getArgs
   
-  let remoteTable = Master.remoteTable initRemoteTable
+  let remoteTable = (Slave.remoteTable . Master.remoteTable) initRemoteTable
   case args of
     ["master", host, port] -> do
       backend <- initializeBackend host port remoteTable
