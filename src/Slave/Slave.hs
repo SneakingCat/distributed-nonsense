@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell, DeriveGeneric, DeriveDataTypeable #-}
 module Slave.Slave
-       ( Message (..)
+       ( Request (..)
+       , Response (..)
        , slaveProc
        , slaveProc__static
        , remoteTable
@@ -16,12 +17,14 @@ import Data.Binary
 import Data.Typeable
 import GHC.Generics
 
-data Message =
-    Request !ProcessId !Int
-  | Response !Int
+data Request = Request !ProcessId !Int
   deriving (Generic, Typeable)
            
-instance Binary Message           
+data Response = Response !Int           
+  deriving (Generic, Typeable)
+           
+instance Binary Request
+instance Binary Response
 
 slaveProc :: Process ()
 slaveProc =

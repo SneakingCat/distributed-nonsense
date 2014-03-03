@@ -10,14 +10,13 @@ import Control.Distributed.Process ( Process, NodeId, RemoteTable
                                    , DiedReason (..), ProcessId (..)
                                    , say, spawnSupervised, spawnLocal
                                    , getSelfPid, send, nsend, expect
-                                   , receiveWait, receiveTimeout
+                                   , receiveWait
                                    , match, monitorNode
-                                   , register, liftIO )
+                                   , register )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Backend.SimpleLocalnet ( Backend
                                                           , findSlaves 
                                                           , terminateAllSlaves )
-import Control.Concurrent (threadDelay)
 import Control.Monad (forever)
 import Data.List ((\\))
 import Data.Binary
@@ -26,7 +25,7 @@ import Text.Printf (printf)
 
 import GHC.Generics
 
-import Slave.Slave (Message (..), slaveProc, slaveProc__static)
+import Slave.Slave (Request (..), Response (..), slaveProc, slaveProc__static)
 
 data NodeDetected = 
   NodeDetected !NodeId
@@ -68,17 +67,49 @@ supervisor = do
 taskMaster :: Process ()
 taskMaster = do
   say "taskMaster"
-  loop []
-  where
-    loop :: [ProcessId] -> Process ()
-    loop [] = do
-      say "Waiting for procs"
-      ProcessUp processId <- expect
-      say "Got proc"
-      loop [processId]
-    loop procs = do
-      say "Bye :-)"
-      return ()
+  taskMaster' [] [1..100] []
+
+taskMaster' :: [ProcessId] -> [Int] -> [Int] -> Process ()
+taskMaster' [] xs ys = do
+  -- No processes are available, wait infinitely for one process to
+  -- show up.
+  say "Waiting for procs"
+  ProcessUp processId <- expect
+  say "Got proc"
+  taskMaster' [processId] xs ys
+  
+taskMaster' procs [] ys
+  | length ys == 100 = do
+    say "Work is done!"
+    return ()
+  | otherwise        = do
+    -- We still have to receive responses from processes.
+    say "Waiting for the last response(s)"
+    Response y <- expect
+    say $ printf "Got response: %d" y
+    taskMaster' procs [] (y:ys)
+    
+taskMaster' procs@(p:ps) s@(x:xs) ys
+  | length s + length ys < 80 = do
+    -- Too many in flight, don't send more.
+    say "Too many in flight. Waiting for various responses"
+    (procs', s', ys') <- receiveWait
+                        [ match $ \(ProcessDown pid) -> do
+                             say $ printf "Lost process %s" (show pid)
+                             return $ (filter (pid /=) procs, s, ys)
+                        , match $ \(ProcessUp pid) -> do
+                             say $ printf "Got process %s" (show pid)
+                             return $ ((pid:procs), s, ys)
+                        , match $ \(Response y) -> do
+                             say $ printf "Got response %d" y
+                             return $ (procs, s, (y:ys))
+                        ]
+    taskMaster' procs' s' ys'
+  | otherwise                 = do
+    say "Send one request"
+    self <- getSelfPid
+    send p $ Request self x
+    taskMaster' (ps ++ [p]) xs ys
 
 nodeDetected :: NodeDetected -> Process ()
 nodeDetected (NodeDetected nodeId) = do
