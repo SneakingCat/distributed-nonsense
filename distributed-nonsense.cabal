@@ -19,7 +19,8 @@ executable distributed-nonsense
   main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.6 && <4.7
+  build-depends:       base >=4.5
+                       , ghc-prim
                        , binary >= 0.6.3.1
                        , distributed-process
                        , distributed-process-simplelocalnet
